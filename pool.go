@@ -5,14 +5,11 @@ import (
 	"time"
 )
 
-var defaultMaxLifetime = 24 * time.Hour
-
 // Pool maintains a list of connections.
 type Pool struct {
 	Dial        func() (*Client, error)
 	MaxActive   int
 	IdleTimeout time.Duration
-	MaxLifetime time.Duration
 	mu          sync.Mutex
 	idle        []*idleConnection
 	active      int
@@ -22,9 +19,8 @@ type Pool struct {
 
 // PooledConnection represents a shared and reusable connection.
 type PooledConnection struct {
-	Pool     *Pool
-	Client   *Client
-	lifetime time.Time
+	Pool   *Pool
+	Client *Client
 }
 
 type idleConnection struct {
@@ -53,11 +49,6 @@ func (p *Pool) Get() (*PooledConnection, error) {
 			p.active++
 			p.mu.Unlock()
 			pc := &PooledConnection{Pool: p, Client: conn.pc.Client}
-			lt := defaultMaxLifetime
-			if p.MaxLifetime > 0 {
-				lt = p.MaxLifetime
-			}
-			pc.lifetime = time.Now().Add(lt)
 			return pc, nil
 
 		}
@@ -117,7 +108,7 @@ func (p *Pool) purge() {
 				continue
 			}
 
-			if v.t.Add(timeout).After(now) && v.pc.lifetime.After(now) {
+			if v.t.Add(timeout).After(now) {
 				valid = append(valid, v)
 			} else {
 				// Force underlying connection closed
