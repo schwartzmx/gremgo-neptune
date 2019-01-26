@@ -9,9 +9,9 @@ func TestPurge(t *testing.T) {
 	n := time.Now()
 
 	// invalid has timedout and should be cleaned up
-	invalid := &idleConnection{t: n.Add(-30 * time.Second), pc: &PooledConnection{Client: &Client{}}}
+	invalid := &idleConnection{t: n.Add(-30 * time.Second), pc: &PooledConnection{Client: &Client{}, lifetime: n.Add(defaultMaxLifetime)}}
 	// valid has not yet timed out and should remain in the idle pool
-	valid := &idleConnection{t: n.Add(30 * time.Second), pc: &PooledConnection{Client: &Client{}}}
+	valid := &idleConnection{t: n.Add(30 * time.Second), pc: &PooledConnection{Client: &Client{}, lifetime: n.Add(defaultMaxLifetime)}}
 
 	// Pool has a 30 second timeout and an idle connection slice containing both
 	// the invalid and valid idle connections
@@ -38,11 +38,11 @@ func TestPurgeErrorClosedConnection(t *testing.T) {
 
 	p := &Pool{IdleTimeout: time.Second * 30}
 
-	valid := &idleConnection{t: n.Add(30 * time.Second), pc: &PooledConnection{Client: &Client{}}}
+	valid := &idleConnection{t: n.Add(30 * time.Second), pc: &PooledConnection{Client: &Client{}, lifetime: n.Add(defaultMaxLifetime)}}
 
 	client := &Client{}
 
-	closed := &idleConnection{t: n.Add(30 * time.Second), pc: &PooledConnection{Pool: p, Client: client}}
+	closed := &idleConnection{t: n.Add(30 * time.Second), pc: &PooledConnection{Pool: p, Client: client, lifetime: n.Add(defaultMaxLifetime)}}
 
 	idle := []*idleConnection{valid, closed}
 
