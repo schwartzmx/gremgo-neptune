@@ -10,6 +10,7 @@ type Pool struct {
 	Dial        func() (*Client, error)
 	MaxActive   int
 	IdleTimeout time.Duration
+	MaxLifetime time.Duration
 	mu          sync.Mutex
 	idle        []*idleConnection
 	active      int
@@ -21,6 +22,7 @@ type Pool struct {
 type PooledConnection struct {
 	Pool   *Pool
 	Client *Client
+	t      time.Time
 }
 
 type idleConnection struct {
@@ -70,7 +72,7 @@ func (p *Pool) Get() (*PooledConnection, error) {
 				return nil, err
 			}
 
-			pc := &PooledConnection{Pool: p, Client: dc}
+			pc := &PooledConnection{Pool: p, Client: dc, t: time.Now()}
 			return pc, nil
 		}
 
@@ -99,7 +101,7 @@ func (p *Pool) put(pc *PooledConnection) {
 // purge removes expired idle connections from the pool.
 // It is not threadsafe. The caller should manage locking the pool.
 func (p *Pool) purge() {
-	if timeout := p.IdleTimeout; timeout > 0 {
+	if p.IdleTimeout > 0 || p.MaxLifetime > 0 {
 		var valid []*idleConnection
 		now := time.Now()
 		for _, v := range p.idle {
@@ -108,12 +110,16 @@ func (p *Pool) purge() {
 				continue
 			}
 
-			if v.t.Add(timeout).After(now) {
-				valid = append(valid, v)
-			} else {
+			if p.IdleTimeout > 0 && v.t.Add(p.IdleTimeout).Before(now) {
 				// Force underlying connection closed
 				v.pc.Client.Close()
+				continue
 			}
+			if p.MaxLifetime > 0 && v.pc.t.Add(p.MaxLifetime).Before(now) {
+				v.pc.Client.Close()
+				continue
+			}
+			valid = append(valid, v)
 		}
 		p.idle = valid
 	}
