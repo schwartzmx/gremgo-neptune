@@ -20,9 +20,9 @@ type Pool struct {
 
 // PooledConnection represents a shared and reusable connection.
 type PooledConnection struct {
-	Pool      *Pool
-	Client    *Client
-	createdAt time.Time
+	Pool   *Pool
+	Client *Client
+	t      time.Time
 }
 
 type idleConnection struct {
@@ -72,7 +72,7 @@ func (p *Pool) Get() (*PooledConnection, error) {
 				return nil, err
 			}
 
-			pc := &PooledConnection{Pool: p, Client: dc, createdAt: time.Now()}
+			pc := &PooledConnection{Pool: p, Client: dc, t: time.Now()}
 			return pc, nil
 		}
 
@@ -115,7 +115,7 @@ func (p *Pool) purge() {
 				v.pc.Client.Close()
 				continue
 			}
-			if p.MaxLifetime > 0 && v.pc.createdAt.Add(p.MaxLifetime).Before(now) {
+			if p.MaxLifetime > 0 && v.pc.t.Add(p.MaxLifetime).Before(now) {
 				v.pc.Client.Close()
 				continue
 			}
