@@ -38,21 +38,30 @@ func (p *Pool) Get() (*PooledConnection, error) {
 	// Lock the pool to keep the kids out.
 	p.mu.Lock()
 
-	// Clean this place up.
-	p.purge()
+	now := time.Now()
 
 	// Wait loop
 	for {
 		// Try to grab first available idle connection
-		if conn := p.first(); conn != nil {
+		for {
+			conn := p.first()
+			if conn == nil {
+				break
+			}
+			numFree := len(p.idle)
+			copy(p.idle, p.idle[1:])
+			p.idle = p.idle[:numFree-1]
+			if (p.IdleTimeout > 0 && conn.t.Add(p.IdleTimeout).Before(now)) ||
+				(p.MaxLifetime > 0 && conn.pc.t.Add(p.MaxLifetime).Before(now)) {
+				conn.pc.Client.Close()
+				continue
+			}
 
 			// Remove the connection from the idle slice
-			p.idle = append(p.idle[:0], p.idle[1:]...)
 			p.active++
 			p.mu.Unlock()
 			pc := &PooledConnection{Pool: p, Client: conn.pc.Client}
 			return pc, nil
-
 		}
 
 		// No idle connections, try dialing a new one
