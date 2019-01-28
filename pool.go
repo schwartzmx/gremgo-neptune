@@ -101,7 +101,9 @@ func (p *Pool) put(pc *PooledConnection) {
 // purge removes expired idle connections from the pool.
 // It is not threadsafe. The caller should manage locking the pool.
 func (p *Pool) purge() {
-	if p.IdleTimeout > 0 || p.MaxLifetime > 0 {
+	it := p.IdleTimeout
+	ml := p.MaxLifetime
+	if it > 0 || ml > 0 {
 		var valid []*idleConnection
 		now := time.Now()
 		for _, v := range p.idle {
@@ -110,12 +112,12 @@ func (p *Pool) purge() {
 				continue
 			}
 
-			if p.IdleTimeout > 0 && v.t.Add(p.IdleTimeout).Before(now) {
+			if it > 0 && v.t.Add(it).Before(now) {
 				// Force underlying connection closed
 				v.pc.Client.Close()
 				continue
 			}
-			if p.MaxLifetime > 0 && v.pc.t.Add(p.MaxLifetime).Before(now) {
+			if ml > 0 && v.pc.t.Add(ml).Before(now) {
 				v.pc.Client.Close()
 				continue
 			}
