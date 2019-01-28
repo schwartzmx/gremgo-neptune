@@ -15,6 +15,7 @@ type Pool struct {
 	idle        []*idleConnection
 	active      int
 	cond        *sync.Cond
+	cleanerCh   chan struct{}
 	closed      bool
 }
 
@@ -38,26 +39,14 @@ func (p *Pool) Get() (*PooledConnection, error) {
 	// Lock the pool to keep the kids out.
 	p.mu.Lock()
 
-	now := time.Now()
-
 	// Wait loop
 	for {
-		// Try to grab first available idle connection
-		for {
-			conn := p.first()
-			if conn == nil {
-				break
-			}
-			numFree := len(p.idle)
-			copy(p.idle, p.idle[1:])
-			p.idle = p.idle[:numFree-1]
-			if (p.IdleTimeout > 0 && conn.t.Add(p.IdleTimeout).Before(now)) ||
-				(p.MaxLifetime > 0 && conn.pc.t.Add(p.MaxLifetime).Before(now)) {
-				conn.pc.Client.Close()
-				continue
-			}
-
+		conn := p.first()
+		if conn != nil {
 			// Remove the connection from the idle slice
+			numIdle := len(p.idle)
+			copy(p.idle, p.idle[1:])
+			p.idle = p.idle[:numIdle-1]
 			p.active++
 			p.mu.Unlock()
 			pc := &PooledConnection{Pool: p, Client: conn.pc.Client}
@@ -101,38 +90,82 @@ func (p *Pool) put(pc *PooledConnection) {
 		pc.Client.Close()
 		return
 	}
+	if pc.Client != nil && pc.Client.Errored {
+		pc.Client.Close()
+		return
+	}
 	idle := &idleConnection{pc: pc, t: time.Now()}
 	// Prepend the connection to the front of the slice
 	p.idle = append([]*idleConnection{idle}, p.idle...)
-
+	p.startCleanerLocked()
 }
 
-// purge removes expired idle connections from the pool.
-// It is not threadsafe. The caller should manage locking the pool.
-func (p *Pool) purge() {
-	it := p.IdleTimeout
-	ml := p.MaxLifetime
-	if it > 0 || ml > 0 {
-		var valid []*idleConnection
-		now := time.Now()
-		for _, v := range p.idle {
-			// If the client has an error then exclude it from the pool
-			if v.pc.Client.Errored {
-				continue
-			}
+func (p *Pool) needStartCleaner() bool {
+	return (p.MaxLifetime > 0 || p.IdleTimeout > 0) &&
+		len(p.idle) > 0 &&
+		p.cleanerCh == nil
+}
 
-			if it > 0 && v.t.Add(it).Before(now) {
-				// Force underlying connection closed
-				v.pc.Client.Close()
-				continue
-			}
-			if ml > 0 && v.pc.t.Add(ml).Before(now) {
-				v.pc.Client.Close()
-				continue
-			}
-			valid = append(valid, v)
+// startCleanerLocked starts connectionCleaner if needed.
+func (p *Pool) startCleanerLocked() {
+	if p.needStartCleaner() {
+		p.cleanerCh = make(chan struct{}, 1)
+		go p.connectionCleaner()
+	}
+}
+
+func (p *Pool) connectionCleaner() {
+	const minInterval = time.Second
+
+	d := p.MaxLifetime
+	if p.IdleTimeout < p.MaxLifetime {
+		d = p.IdleTimeout
+	}
+	if d < minInterval {
+		d = minInterval
+	}
+	t := time.NewTimer(d)
+
+	for {
+		select {
+		case <-t.C:
+		case <-p.cleanerCh: // dbclient was closed.
 		}
-		p.idle = valid
+
+		ml := p.MaxLifetime
+		it := p.IdleTimeout
+		p.mu.Lock()
+		if p.closed || len(p.idle) == 0 || (ml <= 0 && it <= 0) {
+			p.cleanerCh = nil
+			p.mu.Unlock()
+			return
+		}
+		n := time.Now()
+		mlExpiredSince := n.Add(-ml)
+		itExpiredSince := n.Add(-it)
+		var closing []*idleConnection
+		for i := 0; i < len(p.idle); i++ {
+			c := p.idle[i]
+			if (ml > 0 && c.pc.t.Before(mlExpiredSince)) ||
+				(it > 0 && c.t.Before(itExpiredSince)) ||
+				c.pc.Client.Errored {
+				closing = append(closing, c)
+				last := len(p.idle) - 1
+				p.idle[i] = p.idle[last]
+				p.idle[last] = nil
+				p.idle = p.idle[:last]
+				i--
+			}
+		}
+		p.mu.Unlock()
+
+		for _, c := range closing {
+			if c.pc.Client != nil {
+				c.pc.Client.Close()
+			}
+		}
+
+		t.Reset(d)
 	}
 }
 
@@ -161,6 +194,9 @@ func (p *Pool) Close() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	if p.cleanerCh != nil {
+		close(p.cleanerCh)
+	}
 	for _, c := range p.idle {
 		c.pc.Client.Close()
 	}

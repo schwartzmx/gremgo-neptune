@@ -5,24 +5,27 @@ import (
 	"time"
 )
 
-func TestPurge(t *testing.T) {
+func TestConnectionCleaner(t *testing.T) {
 	n := time.Now()
 
 	// invalid has timedout and should be cleaned up
-	invalid := &idleConnection{t: n.Add(-30 * time.Second), pc: &PooledConnection{Client: &Client{}}}
+	invalid := &idleConnection{t: n.Add(-30 * time.Second), pc: &PooledConnection{Client: &Client{}, t: n}}
 	// valid has not yet timed out and should remain in the idle pool
-	valid := &idleConnection{t: n.Add(30 * time.Second), pc: &PooledConnection{Client: &Client{}}}
+	valid := &idleConnection{t: n.Add(30 * time.Second), pc: &PooledConnection{Client: &Client{}, t: n}}
 
 	// Pool has a 30 second timeout and an idle connection slice containing both
 	// the invalid and valid idle connections
-	p := &Pool{IdleTimeout: time.Second * 30, idle: []*idleConnection{invalid, valid}}
+	p := &Pool{IdleTimeout: time.Second * 31, idle: []*idleConnection{invalid, valid}}
 
 	if len(p.idle) != 2 {
 		t.Errorf("Expected 2 idle connections, got %d", len(p.idle))
 	}
 
-	p.purge()
+	p.mu.Lock()
+	p.startCleanerLocked()
+	p.mu.Unlock()
 
+	time.Sleep(1010 * time.Millisecond)
 	if len(p.idle) != 1 {
 		t.Errorf("Expected 1 idle connection after purge, got %d", len(p.idle))
 	}
@@ -38,11 +41,11 @@ func TestPurgeErrorClosedConnection(t *testing.T) {
 
 	p := &Pool{IdleTimeout: time.Second * 30}
 
-	valid := &idleConnection{t: n.Add(30 * time.Second), pc: &PooledConnection{Client: &Client{}}}
+	valid := &idleConnection{t: n.Add(30 * time.Second), pc: &PooledConnection{Client: &Client{}, t: n}}
 
 	client := &Client{}
 
-	closed := &idleConnection{t: n.Add(30 * time.Second), pc: &PooledConnection{Pool: p, Client: client}}
+	closed := &idleConnection{t: n.Add(30 * time.Second), pc: &PooledConnection{Pool: p, Client: client, t: n}}
 
 	idle := []*idleConnection{valid, closed}
 
@@ -55,7 +58,10 @@ func TestPurgeErrorClosedConnection(t *testing.T) {
 		t.Errorf("Expected 2 idle connections, got %d", len(p.idle))
 	}
 
-	p.purge()
+	p.mu.Lock()
+	p.startCleanerLocked()
+	p.mu.Unlock()
+	time.Sleep(1010 * time.Millisecond)
 
 	if len(p.idle) != 1 {
 		t.Errorf("Expected 1 idle connection after purge, got %d", len(p.idle))
@@ -127,7 +133,7 @@ func TestGetAndDial(t *testing.T) {
 
 	pool := &Pool{IdleTimeout: time.Second * 30}
 
-	invalid := &idleConnection{t: n.Add(-30 * time.Second), pc: &PooledConnection{Pool: pool, Client: &Client{}}}
+	invalid := &idleConnection{t: n.Add(-30 * time.Second), pc: &PooledConnection{Pool: pool, Client: &Client{}, t: n}}
 
 	idle := []*idleConnection{invalid}
 	pool.idle = idle
@@ -144,6 +150,11 @@ func TestGetAndDial(t *testing.T) {
 	if pool.idle[0] != invalid {
 		t.Error("Expected invalid connection")
 	}
+
+	pool.mu.Lock()
+	pool.startCleanerLocked()
+	pool.mu.Unlock()
+	time.Sleep(1010 * time.Millisecond)
 
 	conn, err := pool.Get()
 
