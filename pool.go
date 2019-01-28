@@ -8,12 +8,11 @@ import (
 // Pool maintains a list of connections.
 type Pool struct {
 	Dial        func() (*Client, error)
-	MaxActive   int
-	IdleTimeout time.Duration
+	MaxOpen     int
 	MaxLifetime time.Duration
 	mu          sync.Mutex
 	idle        []*idleConnection
-	active      int
+	open        int
 	cond        *sync.Cond
 	cleanerCh   chan struct{}
 	closed      bool
@@ -28,8 +27,6 @@ type PooledConnection struct {
 
 type idleConnection struct {
 	pc *PooledConnection
-	// t is the time the connection was idled
-	t time.Time
 }
 
 // Get will return an available pooled connection. Either an idle connection or
@@ -49,17 +46,17 @@ func (p *Pool) Get() (*PooledConnection, error) {
 			copy(p.idle, p.idle[1:])
 			p.idle = p.idle[:numIdle-1]
 			if ml <= 0 || time.Now().Before(conn.pc.t.Add(ml)) {
-				p.active++
 				p.mu.Unlock()
 				pc := &PooledConnection{Pool: p, Client: conn.pc.Client}
 				return pc, nil
 			}
+			p.open--
 			conn.pc.Client.Close()
 		}
 
 		// No idle connections, try dialing a new one
-		if p.MaxActive == 0 || p.active < p.MaxActive {
-			p.active++
+		if p.MaxOpen == 0 || p.open < p.MaxOpen {
+			p.open++
 			dial := p.Dial
 
 			// Unlock here so that any other connections that need to be
@@ -95,16 +92,17 @@ func (p *Pool) put(pc *PooledConnection) {
 		return
 	}
 	if pc.Client != nil && pc.Client.Errored {
+		p.open--
 		pc.Client.Close()
 		return
 	}
-	idle := &idleConnection{pc: pc, t: time.Now()}
+	idle := &idleConnection{pc: pc}
 	p.idle = append(p.idle, idle)
 	p.startCleanerLocked()
 }
 
 func (p *Pool) needStartCleaner() bool {
-	return (p.MaxLifetime > 0 || p.IdleTimeout > 0) &&
+	return p.MaxLifetime > 0 &&
 		len(p.idle) > 0 &&
 		p.cleanerCh == nil
 }
@@ -121,9 +119,6 @@ func (p *Pool) connectionCleaner() {
 	const minInterval = time.Second
 
 	d := p.MaxLifetime
-	if p.IdleTimeout < p.MaxLifetime {
-		d = p.IdleTimeout
-	}
 	if d < minInterval {
 		d = minInterval
 	}
@@ -136,21 +131,18 @@ func (p *Pool) connectionCleaner() {
 		}
 
 		ml := p.MaxLifetime
-		it := p.IdleTimeout
 		p.mu.Lock()
-		if p.closed || len(p.idle) == 0 || (ml <= 0 && it <= 0) {
+		if p.closed || len(p.idle) == 0 || ml <= 0 {
 			p.cleanerCh = nil
 			p.mu.Unlock()
 			return
 		}
 		n := time.Now()
 		mlExpiredSince := n.Add(-ml)
-		itExpiredSince := n.Add(-it)
 		var closing []*idleConnection
 		for i := 0; i < len(p.idle); i++ {
 			c := p.idle[i]
 			if (ml > 0 && c.pc.t.Before(mlExpiredSince)) ||
-				(it > 0 && c.t.Before(itExpiredSince)) ||
 				c.pc.Client.Errored {
 				closing = append(closing, c)
 				last := len(p.idle) - 1
@@ -178,7 +170,6 @@ func (p *Pool) release() {
 	if p.closed {
 		return
 	}
-	p.active--
 	if p.cond != nil {
 		p.cond.Signal()
 	}
