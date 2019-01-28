@@ -44,6 +44,9 @@ func (p *Pool) Get() (*PooledConnection, error) {
 		conn := p.first()
 		if conn != nil {
 			// Remove the connection from the idle slice
+			numIdle := len(p.idle)
+			copy(p.idle, p.idle[1:])
+			p.idle = p.idle[:numIdle-1]
 			p.active++
 			p.mu.Unlock()
 			pc := &PooledConnection{Pool: p, Client: conn.pc.Client}
