@@ -87,8 +87,7 @@ func (p *Pool) put(pc *PooledConnection) {
 		pc.Client.Close()
 		return
 	}
-	if (pc.Client != nil && pc.Client.Errored) ||
-		(p.MaxLifetime > 0 && time.Now().After(pc.t.Add(p.MaxLifetime))) {
+	if pc.Client != nil && pc.Client.Errored {
 		p.open--
 		pc.Client.Close()
 		return
@@ -199,6 +198,9 @@ func (p *Pool) Close() {
 // returned to the pool for future use.
 func (pc *PooledConnection) Close() {
 	go func() {
+		if pc.Pool.MaxLifetime > 0 && time.Now().After(pc.t.Add(pc.Pool.MaxLifetime)) {
+			pc.Client.Errored = true
+		}
 		pc.Pool.mu.Lock()
 		defer pc.Pool.mu.Unlock()
 
