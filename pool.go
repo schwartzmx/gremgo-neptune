@@ -44,9 +44,14 @@ func (p *Pool) Get() (*PooledConnection, error) {
 			numIdle := len(p.idle)
 			copy(p.idle, p.idle[1:])
 			p.idle = p.idle[:numIdle-1]
-			p.mu.Unlock()
-			pc := &PooledConnection{Pool: p, Client: conn.pc.Client}
-			return pc, nil
+			if p.MaxLifetime <= 0 || time.Now().Before(conn.pc.t.Add(p.MaxLifetime)) {
+				p.mu.Unlock()
+				pc := &PooledConnection{Pool: p, Client: conn.pc.Client, t: conn.pc.t}
+				return pc, nil
+			}
+
+			p.open--
+			conn.pc.Client.Close()
 		}
 
 		// No idle connections, try dialing a new one
@@ -197,14 +202,9 @@ func (p *Pool) Close() {
 // Close signals that the caller is finished with the connection and should be
 // returned to the pool for future use.
 func (pc *PooledConnection) Close() {
-	go func() {
-		if pc.Pool.MaxLifetime > 0 && time.Now().After(pc.t.Add(pc.Pool.MaxLifetime)) {
-			pc.Client.Errored = true
-		}
-		pc.Pool.mu.Lock()
-		defer pc.Pool.mu.Unlock()
+	pc.Pool.mu.Lock()
+	defer pc.Pool.mu.Unlock()
 
-		pc.Pool.put(pc)
-		pc.Pool.release()
-	}()
+	pc.Pool.put(pc)
+	pc.Pool.release()
 }

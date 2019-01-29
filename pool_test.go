@@ -81,7 +81,6 @@ func TestPooledConnectionClose(t *testing.T) {
 	}
 
 	pc.Close()
-	time.Sleep(10 * time.Millisecond)
 
 	if len(pool.idle) != 1 {
 		t.Errorf("Expected 1 idle connection, got %d", len(pool.idle))
@@ -173,7 +172,6 @@ func TestGetAndDial(t *testing.T) {
 
 	// Close the connection and ensure it was returned to the idle pool
 	conn.Close()
-	time.Sleep(time.Millisecond)
 
 	if len(pool.idle) != 1 {
 		t.Error("Expected connection to be returned to idle pool")
