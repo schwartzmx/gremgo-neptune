@@ -66,6 +66,7 @@ func (p *Pool) Get() (*PooledConnection, error) {
 			dc, err := dial()
 			if err != nil {
 				p.mu.Lock()
+				p.open--
 				p.release()
 				p.mu.Unlock()
 				return nil, err
@@ -144,6 +145,7 @@ func (p *Pool) connectionCleaner() {
 			c := p.idle[i]
 			if (ml > 0 && c.pc.t.Before(mlExpiredSince)) ||
 				c.pc.Client.Errored {
+				p.open--
 				closing = append(closing, c)
 				last := len(p.idle) - 1
 				p.idle[i] = p.idle[last]

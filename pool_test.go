@@ -166,8 +166,8 @@ func TestGetAndDial(t *testing.T) {
 		t.Error("Expected correct client to be returned")
 	}
 
-	if pool.open != 1 {
-		t.Errorf("Expected 1 opened connection, got %d", pool.open)
+	if pool.open != 0 {
+		t.Errorf("Expected 0 opened connection, got %d", pool.open)
 	}
 
 	// Close the connection and ensure it was returned to the idle pool
@@ -175,10 +175,6 @@ func TestGetAndDial(t *testing.T) {
 
 	if len(pool.idle) != 1 {
 		t.Error("Expected connection to be returned to idle pool")
-	}
-
-	if pool.open != 1 {
-		t.Errorf("Expected 1 opened connections, got %d", pool.open)
 	}
 
 	// Get a new connection and ensure that it is the now idling connection
@@ -190,9 +186,5 @@ func TestGetAndDial(t *testing.T) {
 
 	if conn.Client != client {
 		t.Error("Expected the same connection to be reused")
-	}
-
-	if pool.open != 1 {
-		t.Errorf("Expected 1 opened connection, got %d", pool.open)
 	}
 }
