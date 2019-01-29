@@ -35,7 +35,6 @@ type idleConnection struct {
 func (p *Pool) Get() (*PooledConnection, error) {
 	// Lock the pool to keep the kids out.
 	p.mu.Lock()
-	ml := p.MaxLifetime
 
 	// Wait loop
 	for {
@@ -45,13 +44,9 @@ func (p *Pool) Get() (*PooledConnection, error) {
 			numIdle := len(p.idle)
 			copy(p.idle, p.idle[1:])
 			p.idle = p.idle[:numIdle-1]
-			if ml <= 0 || time.Now().Before(conn.pc.t.Add(ml)) {
-				p.mu.Unlock()
-				pc := &PooledConnection{Pool: p, Client: conn.pc.Client}
-				return pc, nil
-			}
-			p.open--
-			conn.pc.Client.Close()
+			p.mu.Unlock()
+			pc := &PooledConnection{Pool: p, Client: conn.pc.Client}
+			return pc, nil
 		}
 
 		// No idle connections, try dialing a new one
@@ -92,7 +87,8 @@ func (p *Pool) put(pc *PooledConnection) {
 		pc.Client.Close()
 		return
 	}
-	if pc.Client != nil && pc.Client.Errored {
+	if (pc.Client != nil && pc.Client.Errored) ||
+		(p.MaxLifetime > 0 && time.Now().After(pc.t.Add(p.MaxLifetime))) {
 		p.open--
 		pc.Client.Close()
 		return
