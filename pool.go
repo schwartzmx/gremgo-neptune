@@ -198,9 +198,11 @@ func (p *Pool) Close() {
 // Close signals that the caller is finished with the connection and should be
 // returned to the pool for future use.
 func (pc *PooledConnection) Close() {
-	pc.Pool.mu.Lock()
-	defer pc.Pool.mu.Unlock()
+	go func() {
+		pc.Pool.mu.Lock()
+		defer pc.Pool.mu.Unlock()
 
-	pc.Pool.put(pc)
-	pc.Pool.release()
+		pc.Pool.put(pc)
+		pc.Pool.release()
+	}()
 }
