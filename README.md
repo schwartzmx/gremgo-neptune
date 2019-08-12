@@ -1,8 +1,8 @@
-# gremgo-neptune
+# gremgo
 
-[![GoDoc](http://img.shields.io/badge/godoc-reference-blue.svg)](http://godoc.org/github.com/schwartzmx/gremgo-neptune) [![Build Status](https://travis-ci.org/schwartzmx/gremgo-neptune.svg?branch=master)](https://travis-ci.org/schwartzmx/gremgo-neptune) [![Go Report Card](https://goreportcard.com/badge/github.com/schwartzmx/gremgo-neptune)](https://goreportcard.com/report/github.com/schwartzmx/gremgo-neptune)
+[![GoDoc](http://img.shields.io/badge/godoc-reference-blue.svg)](http://godoc.org/github.com/schwartzmx/gremgo) [![Build Status](https://travis-ci.org/schwartzmx/gremgo.svg?branch=master)](https://travis-ci.org/schwartzmx/gremgo) [![Go Report Card](https://goreportcard.com/badge/github.com/schwartzmx/gremgo)](https://goreportcard.com/report/github.com/schwartzmx/gremgo)
 
-gremgo-neptune is a fork of [qasaur/gremgo](https://github.com/qasaur/gremgo) with alterations to make it compatible with [AWS Neptune](https://aws.amazon.com/neptune/) which is a "Fast, reliable graph database built for the cloud".
+gremgo is a fork of [qasaur/gremgo](https://github.com/qasaur/gremgo) with alterations to make it compatible with [AWS Neptune](https://aws.amazon.com/neptune/) which is a "Fast, reliable graph database built for the cloud".
 
 gremgo is a fast, efficient, and easy-to-use client for the TinkerPop graph database stack. It is a Gremlin language driver which uses WebSockets to interface with Gremlin Server and has a strong emphasis on concurrency and scalability. Please keep in mind that gremgo is still under heavy development and although effort is being made to fully cover gremgo with reliable tests, bugs may be present in several areas.
 
@@ -11,14 +11,14 @@ gremgo is a fast, efficient, and easy-to-use client for the TinkerPop graph data
 Installation
 ==========
 ```
-go get github.com/schwartzmx/gremgo-neptune
+go get github.com/schwartzmx/gremgo
 dep ensure
 ```
 
 Documentation
 ==========
 
-* [GoDoc](https://godoc.org/github.com/schwartzmx/gremgo-neptune)
+* [GoDoc](https://godoc.org/github.com/schwartzmx/gremgo)
 
 Example
 ==========
@@ -29,7 +29,7 @@ import (
     "fmt"
     "log"
 
-    "github.com/schwartzmx/gremgo-neptune"
+    "github.com/schwartzmx/gremgo"
 )
 
 func main() {
@@ -74,7 +74,7 @@ import (
     "fmt"
     "log"
 
-    "github.com/schwartzmx/gremgo-neptune"
+    "github.com/schwartzmx/gremgo"
 )
 
 func main() {
